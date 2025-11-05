@@ -35,7 +35,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
             $remaining = $lockDuration - (time() - $_SESSION['lock_time']);
             $minutes = ceil($remaining / 60);
             $login_error = "Too many failed attempts. Try again in $minutes minute(s).";
-            return;
         } else {
             // Unlock after time
             $_SESSION['login_attempts'] = 0;
@@ -43,80 +42,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
         }
     }
 
-    $email    = trim($_POST['email'] ?? '');
-    $password = $_POST['password'] ?? '';
+    if (empty($login_error)) { // Only proceed if not locked out
+        $email    = trim($_POST['email'] ?? '');
+        $password = $_POST['password'] ?? '';
 
-    // Basic validations
-    if (empty($email) || empty($password)) {
-        $login_error = "Please fill in both fields.";
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/@gmail\.com$/', $email)) {
-        $login_error = "Only valid Gmail addresses are allowed.";
-    } elseif (strlen($password) < 8) {
-        $login_error = "Password must be at least 8 characters long.";
-    } elseif (!preg_match('/[A-Z]/', $password)) {
-        $login_error = "Password must contain at least one uppercase letter.";
-    } elseif (!preg_match('/[0-9]/', $password)) {
-        $login_error = "Password must contain at least one number.";
-    } else {
+        // Basic validations
+        if (empty($email) || empty($password)) {
+            $login_error = "Please fill in both fields.";
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/@gmail\.com$/', $email)) {
+            $login_error = "Only valid Gmail addresses are allowed.";
+        } elseif (strlen($password) < 8) {
+            $login_error = "Password must be at least 8 characters long.";
+        } elseif (!preg_match('/[A-Z]/', $password)) {
+            $login_error = "Password must contain at least one uppercase letter.";
+        } elseif (!preg_match('/[0-9]/', $password)) {
+            $login_error = "Password must contain at least one number.";
+        } else {
+            // Check user
+            $stmt = $conn->prepare("SELECT * FROM users WHERE email = ?");
+            if ($stmt) {
+                $stmt->bind_param("s", $email);
+                $stmt->execute();
+                $result = $stmt->get_result();
 
-        // Check user
-        $stmt = $conn->prepare("SELECT * FROM users WHERE email = ?");
-        if ($stmt) {
-            $stmt->bind_param("s", $email);
-            $stmt->execute();
-            $result = $stmt->get_result();
-
-            // EMAIL NOT FOUND
-            if ($result->num_rows !== 1) {
-                $_SESSION['login_attempts']++;
-
-                if ($_SESSION['login_attempts'] == 5) {
-                    $_SESSION['lock_time'] = time();
-                }
-                $login_error = "Email not found!";
-            } 
-            else {
-                $user = $result->fetch_assoc();
-
-                // WRONG PASSWORD
-                if (!password_verify($password, $user['password'])) {
+                // EMAIL NOT FOUND
+                if ($result->num_rows !== 1) {
                     $_SESSION['login_attempts']++;
 
-                    if ($_SESSION['login_attempts'] == 5) {
+                    if ($_SESSION['login_attempts'] >= 5) {
                         $_SESSION['lock_time'] = time();
                     }
-                    $login_error = "Wrong password!";
+                    $login_error = "Email not found!";
                 } 
-                // SUCCESS LOGIN
                 else {
-                    $_SESSION['login_attempts'] = 0;
-                    $_SESSION['lock_time'] = 0;
-                    session_regenerate_id(true);
+                    $user = $result->fetch_assoc();
 
-                    if (empty($user['role'])) {
-                        $user['role'] = 'user';
-                    }
+                    // WRONG PASSWORD
+                    if (!password_verify($password, $user['password'])) {
+                        $_SESSION['login_attempts']++;
 
-                    $_SESSION['user_id']   = $user['id'];
-                    $_SESSION['email']     = $user['email'];
-                    $_SESSION['fullname']  = $user['fullname'] ?? '';
-                    $_SESSION['role']      = $user['role'];
+                        if ($_SESSION['login_attempts'] >= 5) {
+                            $_SESSION['lock_time'] = time();
+                        }
+                        $login_error = "Wrong password!";
+                    } 
+                    // SUCCESS LOGIN
+                    else {
+                        $_SESSION['login_attempts'] = 0;
+                        $_SESSION['lock_time'] = 0;
+                        session_regenerate_id(true);
 
-                    // Redirect by role
-                    if ($_SESSION['role'] === 'admin') {
-                        header("Location: Dashboard.php");
-                        exit;
-                    } else {
-                        header("Location: home.php");
-                        exit;
+                        if (empty($user['role'])) {
+                            $user['role'] = 'user';
+                        }
+
+                        $_SESSION['user_id']   = $user['id'];
+                        $_SESSION['email']     = $user['email'];
+                        $_SESSION['fullname']  = $user['fullname'] ?? '';
+                        $_SESSION['role']      = $user['role'];
+
+                        // Redirect by role
+                        if ($_SESSION['role'] === 'admin') {
+                            header("Location: Dashboard.php");
+                            exit;
+                        } else {
+                            header("Location: home.php");
+                            exit;
+                        }
                     }
                 }
+                $stmt->close();
+            } 
+            else {
+                $login_error = "Database query failed.";
             }
-
-            $stmt->close();
-        } 
-        else {
-            $login_error = "Database query failed.";
         }
     }
 }
@@ -371,14 +370,260 @@ if (isset($_POST['verify_otp'])) {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;700;900&family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
-</head>
+  
+  <style>
+    /* --- Responsive Styles --- */
+    
+    /* --- Navbar & Burger Menu --- */
+    .nav-toggle {
+        display: none; /* Hidden on desktop */
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 10px;
+        z-index: 1001; /* Above nav menu */
+    }
+    .nav-toggle .burger-bar {
+        display: block;
+        width: 25px;
+        height: 3px;
+        background-color: #333;
+        border-radius: 3px;
+        transition: all 0.3s ease;
+    }
+    .nav-toggle .burger-bar + .burger-bar {
+        margin-top: 5px;
+    }
+
+    @media (max-width: 992px) {
+      .navbar {
+        padding: 15px 20px;
+        justify-content: space-between;
+      }
+      .nav-toggle {
+          display: block; /* Show burger button */
+          order: 3; /* Place it after nav-icons */
+      }
+      .nav-icons {
+          order: 2; /* Keep icons before burger */
+          margin-left: auto; /* Push icons to the right, but before burger */
+      }
+      .logo {
+          order: 1; /* Logo first */
+      }
+      
+      /* Hide user controls on mobile, they should be in the menu */
+      .login-btn, .profile-dropdown {
+          display: none; 
+      }
+
+      .nav-menu {
+        display: none; /* Hide menu by default */
+        position: absolute;
+        top: 100%; /* Position right below the navbar */
+        left: 0;
+        width: 100%;
+        background-color: #fff;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+        flex-direction: column;
+        padding: 10px 0;
+      }
+      
+      .nav-menu.is-active {
+          display: flex; /* Show menu when active */
+      }
+      
+      .nav-links {
+        flex-direction: column;
+        width: 100%;
+        margin: 0;
+      }
+      .nav-links li {
+        text-align: center;
+        width: 100%;
+      }
+      .nav-links a {
+        display: block;
+        padding: 15px 0;
+        width: 100%;
+      }
+      .nav-links a:hover {
+          background-color: #f8f9fa;
+      }
+
+      /* Burger 'X' animation */
+      .nav-toggle.is-active .burger-bar:nth-child(1) {
+          transform: translateY(8px) rotate(45deg);
+      }
+      .nav-toggle.is-active .burger-bar:nth-child(2) {
+          opacity: 0;
+      }
+      .nav-toggle.is-active .burger-bar:nth-child(3) {
+          transform: translateY(-8px) rotate(-45deg);
+      }
+    }
+
+    @media (max-width: 768px) {
+      .navbar {
+        padding: 10px 15px;
+      }
+      /* Adjust order for smaller screens if needed */
+      .nav-toggle {
+          order: 2; /* Burger before icons */
+      }
+      .nav-icons {
+          order: 3; /* Icons last */
+          margin-left: 0;
+      }
+      .brand-name {
+          font-size: 20px; /* Smaller brand name */
+      }
+      .logo img {
+          height: 25px; /* Smaller logo */
+      }
+      .icon-btn {
+          width: 35px;
+          height: 35px;
+      }
+      .nav-icons img {
+          width: 18px;
+          height: 18px;
+      }
+    }
+
+    /* --- Hero Section --- */
+    @media (max-width: 1024px) {
+      .hero {
+        flex-direction: column;
+        padding: 40px 20px;
+        text-align: center;
+        min-height: auto; /* Allow height to adjust */
+      }
+      .hero-content {
+        max-width: 100%;
+        padding: 0;
+        order: 2; /* Content below image */
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .hero-heading {
+        font-size: 48px;
+      }
+      .hero-subtext {
+        max-width: 100%;
+      }
+      .hero-image-container {
+        order: 1; /* Image on top */
+        padding-right: 0;
+        margin-bottom: 30px;
+        width: 100%;
+      }
+      .hero-product-img {
+        margin-top: -40px;
+        max-width: 450px;
+      }
+      .shape {
+        transform: skew(-10deg);
+      }
+      .shape-1 { right: 50%; width: 30%; }
+      .shape-2 { right: 20%; width: 30%; }
+      .shape-3 { right: -10%; width: 30%; }
+    }
+    
+    @media (max-width: 768px) {
+       .hero-heading {
+          font-size: 36px; /* Even smaller for phones */
+       }
+       .hero-product-img {
+          max-width: 300px;
+          margin-top: 0;
+       }
+    }
+
+    /* --- Features Section --- */
+    @media (max-width: 768px) {
+      .features-container {
+        flex-direction: column;
+        gap: 20px;
+        padding: 20px;
+      }
+      .feature-item {
+        min-width: 100%;
+      }
+    }
+    
+    /* --- What's New Section --- */
+    @media (max-width: 768px) {
+      .whats-new {
+        grid-template-columns: 1fr; /* Stack category cards */
+      }
+    }
+    
+    /* --- New Arrivals Grid --- */
+    @media (max-width: 992px) {
+      .product-grid-container {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        padding: 0 10px;
+      }
+    }
+    
+    @media (max-width: 576px) {
+      .product-grid-container {
+        grid-template-columns: repeat(2, 1fr); /* 2 columns on small phones */
+        gap: 15px;
+      }
+      .product-card {
+          flex: 0 0 auto; /* Let grid handle sizing */
+      }
+      .product-name {
+          font-size: 0.9rem;
+      }
+      .product-price {
+          font-size: 1rem;
+      }
+    }
+
+    /* --- About Section --- */
+    @media (max-width: 768px) {
+      .about-container {
+        flex-direction: column;
+        gap: 30px;
+      }
+      .about-content {
+          text-align: center;
+      }
+      .about-content .section-title {
+          text-align: center;
+      }
+    }
+    
+    /* --- Footer --- */
+    @media (max-width: 880px) {
+      .footer-main {
+          padding: 40px 20px;
+      }
+      .footer-main .footer-left,
+      .footer-main .footer-center,
+      .footer-main .footer-right {
+        width: 100%;
+        margin-bottom: 30px;
+        text-align: center;
+      }
+      .footer-main .footer-center i {
+        margin-left: 0;
+      }
+    }
+  </style>
+  </head>
 <body>
   <header class="navbar">
     <div class="logo">
       <img src="assets/Media (2) 1.png">
       <span class="brand-name">SAPLOT de MANILA</span>
     </div>
-    <nav>
+
+    <nav class="nav-menu" id="nav-menu">
       <ul class="nav-links">
         <li><a href="home.php" class="active">HOME</a></li>
         <li><a href="product.php">SHOP</a></li>
@@ -386,6 +631,12 @@ if (isset($_POST['verify_otp'])) {
         <li><a href="contact.php">CONTACT</a></li>
       </ul>
     </nav>
+    
+    <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">
+        <span class="burger-bar"></span>
+        <span class="burger-bar"></span>
+        <span class="burger-bar"></span>
+    </button>
     <div class="nav-icons">
         <a href="#" class="icon-btn" id="search-icon">
     <img src="assets/search (1) 1.png" alt="Search">
@@ -397,7 +648,6 @@ if (isset($_POST['verify_otp'])) {
   </a>
 </div>
 
-<!-- 🔍 Search Overlay -->
 <div id="search-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:999;">
   <div style="background:#fff; padding:20px 30px; border-radius:10px; display:flex; align-items:center; gap:10px;">
     <form method="GET" action="product.php" style="display:flex; gap:10px; align-items:center;">
@@ -600,9 +850,7 @@ if (isset($_POST['verify_otp'])) {
       </form>
     </div>
   </div>
- <!-- FORGOT PASSWORD MODAL -->
-<!-- FORGOT PASSWORD MODAL -->
-<div id="forgotModal" class="modal" style="display:none;">
+ <div id="forgotModal" class="modal" style="display:none;">
   <div class="modal-content" style="
       max-width:380px;
       margin:auto;
@@ -613,7 +861,6 @@ if (isset($_POST['verify_otp'])) {
       text-align:center;
       position:relative;">
       
-    <!-- CLOSE BUTTON -->
     <span class="close-btn" id="closeForgotModal" style="
         position:absolute;
         top:10px;
@@ -647,7 +894,6 @@ if (isset($_POST['verify_otp'])) {
   </div>
 </div>
 
-<!-- VERIFY OTP MODAL -->
 <div id="verifyOtpModal" class="modal" style="display:none;">
   <div class="modal-content" style="
       max-width:380px;
@@ -659,7 +905,6 @@ if (isset($_POST['verify_otp'])) {
       text-align:center;
       position:relative;">
       
-    <!-- CLOSE BUTTON -->
     <span class="close-btn" id="closeVerifyOtpModal" style="
         position:absolute;
         top:10px;
@@ -693,7 +938,6 @@ if (isset($_POST['verify_otp'])) {
   </div>
 </div>
 
-<!-- RESET PASSWORD MODAL -->
 <div id="resetPassModal" class="modal" style="display:none;">
   <div class="modal-content" style="
       max-width:380px;
@@ -705,7 +949,6 @@ if (isset($_POST['verify_otp'])) {
       text-align:center;
       position:relative;">
       
-    <!-- CLOSE BUTTON -->
     <span class="close-btn" id="closeResetPassModal" style="
         position:absolute;
         top:10px;
@@ -756,7 +999,6 @@ if (isset($_POST['verify_otp'])) {
 
         <form method="POST" action="homepage.php">
             
-            <!-- ✅ Full name letters + spaces only -->
             <input
                 type="text"
                 name="fullname"
@@ -767,7 +1009,6 @@ if (isset($_POST['verify_otp'])) {
                 title="Full name must contain letters and spaces only"
             >
 
-            <!-- ✅ Username letters + numbers only -->
             <input
                 type="text"
                 name="username"
@@ -785,7 +1026,6 @@ if (isset($_POST['verify_otp'])) {
                 required
             >
 
-            <!-- ✅ Must contain capital letter + min 8 chars -->
             <input
                 type="password"
                 name="password"
@@ -853,24 +1093,48 @@ if (isset($_POST['verify_otp'])) {
 
         if(showRegisterModal) showRegisterModal.onclick = (e) => { e.preventDefault(); loginModal.style.display = "none"; registerModal.style.display = "block"; }
         if(showLoginModal) showLoginModal.onclick = (e) => { e.preventDefault(); registerModal.style.display = "none"; loginModal.style.display = "block"; }
-// --- SEARCH ---
-const searchIcon = document.getElementById('search-icon');
-const searchOverlay = document.getElementById('search-overlay');
-const closeSearchBtn = document.getElementById('close-search');
-const searchInput = document.getElementById('search-input');
 
-// Open overlay
-searchIcon.addEventListener('click', (e) => {
-  e.preventDefault();
-  searchOverlay.style.display = 'flex';
-  searchInput.focus();
-});
+        // --- START: BURGER MENU SCRIPT ---
+        const navToggle = document.getElementById('nav-toggle');
+        const navMenu = document.getElementById('nav-menu');
 
-// Close overlay
-closeSearchBtn.addEventListener('click', () => {
-  searchOverlay.style.display = 'none';
-  searchInput.value = '';
-});
+        if (navToggle && navMenu) {
+            navToggle.addEventListener('click', () => {
+                // Toggle the 'is-active' class on both the button and the menu
+                navToggle.classList.toggle('is-active');
+                navMenu.classList.toggle('is-active');
+            });
+        }
+        // --- END: BURGER MENU SCRIPT ---
+
+        // --- SEARCH ---
+        const searchIcon = document.getElementById('search-icon');
+        const searchOverlay = document.getElementById('search-overlay');
+        const closeSearchBtn = document.getElementById('close-search');
+        const searchInput = document.getElementById('search-input'); // This ID was in your HTML
+
+        // Open overlay
+        searchIcon.addEventListener('click', (e) => {
+          e.preventDefault();
+          searchOverlay.style.display = 'flex';
+          searchInput.focus();
+        });
+
+        // Close overlay
+        closeSearchBtn.addEventListener('click', () => {
+          searchOverlay.style.display = 'none';
+          searchInput.value = '';
+        });
+        
+        // Also close the second search overlay if it exists
+        const closeSearchBtn2 = document.getElementById('close-search');
+        if (closeSearchBtn2) {
+            closeSearchBtn2.addEventListener('click', () => {
+              searchOverlay.style.display = 'none';
+              searchInput.value = '';
+            });
+        }
+        
         // --- PROFILE DROPDOWN ---
         const profileDropdown = document.querySelector('.profile-dropdown');
         if (profileDropdown) {
@@ -897,16 +1161,22 @@ const closeVerifyOtpModal = document.getElementById('closeVerifyOtpModal');
 const closeResetPassModal = document.getElementById('closeResetPassModal');
 
 // Open Forgot Password Modal from Login
-forgotLink.addEventListener('click', (e) => {
-  e.preventDefault();
-  document.getElementById('loginModal').style.display = 'none';
-  forgotModal.style.display = 'flex';
-});
+if (forgotLink) {
+    forgotLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('loginModal').style.display = 'none';
+      forgotModal.style.display = 'flex';
+    });
+}
+
 
 //  Close Forgot Password Modal
-closeForgotModal.addEventListener('click', () => {
-  forgotModal.style.display = 'none';
-});
+if (closeForgotModal) {
+    closeForgotModal.addEventListener('click', () => {
+      forgotModal.style.display = 'none';
+    });
+}
+
 
 //  Close Verify OTP Modal
 if (closeVerifyOtpModal) {
@@ -926,7 +1196,7 @@ if (closeResetPassModal) {
 window.addEventListener('click', (e) => {
   const modals = [forgotModal, verifyOtpModal, resetPassModal];
   modals.forEach(modal => {
-    if (e.target === modal) {
+    if (modal && e.target === modal) {
       modal.style.display = 'none';
     }
   });
@@ -934,13 +1204,11 @@ window.addEventListener('click', (e) => {
 </script>
 
 
-<!-- OTP Modal -->
 <div id="otpModal" class="modal" style="display:none;">
   <div class="modal-content" style="max-width:380px; margin:auto; padding:25px; border-radius:10px; background:#fff; box-shadow:0 4px 12px rgba(0,0,0,0.15); text-align:center;">
     <h2 style="margin-bottom:8px;">Email Verification</h2>
     <p style="color:#555; margin-bottom:15px;">We sent a 6-digit OTP to your email.</p>
 
-    <!-- ALERT AREA -->
     <?php if (!empty($register_error) && isset($_POST['verify_otp'])): ?>
       <div id="otpAlert" style="
           background: <?= (strpos($register_error, 'Invalid') !== false || strpos($register_error, 'expired') !== false) ? '#f8d7da' : '#d1e7dd' ?>;
@@ -951,17 +1219,17 @@ window.addEventListener('click', (e) => {
       </div>
     <?php endif; ?>
 
-    <!-- OTP INPUT -->
     <form method="POST" action="">
       <input type="text" name="otp" placeholder="Enter OTP" maxlength="6" required
         style="width:80%; padding:10px; border:1px solid #ccc; border-radius:5px; margin-bottom:12px; text-align:center; font-size:16px;">
       <br>
-      <!-- BLACK VERIFY BUTTON -->
       <button type="submit" name="verify_otp"
         style="background:#000; color:white; border:none; padding:10px 15px; border-radius:6px; cursor:pointer; width:85%; font-size:15px; transition:0.3s;">
         Verify OTP
       </button>
     </form>
+  </div>
+</div>
 
 <script>
 window.onload = function() {
