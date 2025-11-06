@@ -372,6 +372,12 @@ if (isset($_POST['verify_otp'])) {
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;700;900&family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
   
   <style>
+    /* START: ADDED FIX FOR HERO TEXT VISIBILITY */
+    .hero-content {
+        position: relative; /* This activates the z-index: 10 from style.css */
+    }
+    /* END: ADDED FIX */
+
     /* --- Responsive Styles --- */
     
     /* --- Navbar & Burger Menu --- */
@@ -395,11 +401,28 @@ if (isset($_POST['verify_otp'])) {
         margin-top: 5px;
     }
 
+    /* START: HIDE MOBILE AUTH ON DESKTOP */
+    .mobile-auth {
+        display: none;
+    }
+    /* END: HIDE MOBILE AUTH ON DESKTOP */
+
+
     @media (max-width: 992px) {
       .navbar {
         padding: 15px 20px;
         justify-content: space-between;
       }
+
+      /* START: ADDED LOGO SIZING FOR TABLET */
+      .brand-name {
+          font-size: 22px; 
+      }
+      .logo img {
+          height: 28px;
+      }
+      /* END: ADDED LOGO SIZING FOR TABLET */
+
       .nav-toggle {
           display: block; /* Show burger button */
           order: 3; /* Place it after nav-icons */
@@ -450,6 +473,28 @@ if (isset($_POST['verify_otp'])) {
       .nav-links a:hover {
           background-color: #f8f9fa;
       }
+
+      /* START: ADDED CSS FOR MOBILE AUTH LINKS */
+      .mobile-auth {
+          display: block; 
+          width: 100%;
+          text-align: center;
+      }
+      .mobile-auth a {
+          display: block;
+          padding: 15px 0;
+          width: 100%;
+          color: #E03A3E;
+          font-weight: 600;
+      }
+      .mobile-auth a:hover {
+          background-color: #f8f9fa;
+      }
+      .mobile-auth i {
+          margin-right: 8px;
+      }
+      /* END: ADDED CSS FOR MOBILE AUTH LINKS */
+
 
       /* Burger 'X' animation */
       .nav-toggle.is-active .burger-bar:nth-child(1) {
@@ -629,7 +674,15 @@ if (isset($_POST['verify_otp'])) {
         <li><a href="product.php">SHOP</a></li>
         <li><a href="about.php">ABOUT</a></li>
         <li><a href="contact.php">CONTACT</a></li>
-      </ul>
+        
+        <li class="mobile-auth"> 
+          <?php if (isset($_SESSION['user_id']) && isset($_SESSION['fullname'])): ?>
+            <a href="logout.php"><i class="fa fa-sign-out-alt"></i> Log Out (<?php echo htmlspecialchars($_SESSION['fullname']); ?>)</a>
+          <?php else: ?>
+            <a href="#" id="mobileLoginBtn"><i class="fa fa-sign-in-alt"></i> Log In / Sign Up</a>
+          <?php endif; ?>
+        </li>
+        </ul>
     </nav>
     
     <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">
@@ -1072,6 +1125,7 @@ if (isset($_POST['verify_otp'])) {
         const closeRegisterModal = document.getElementById("closeRegisterModal");
         const showRegisterModal = document.getElementById("showRegisterModal");
         const showLoginModal = document.getElementById("showLoginModal");
+        const mobileLoginBtn = document.getElementById("mobileLoginBtn"); // <-- ADDED
 
         // --- FIXED: Check for login action from URL to auto-open modal ---
         const urlParams = new URLSearchParams(window.location.search);
@@ -1081,8 +1135,26 @@ if (isset($_POST['verify_otp'])) {
             }
         }
 
+        // --- START: BURGER MENU SCRIPT ---
+        const navToggle = document.getElementById('nav-toggle');
+        const navMenu = document.getElementById('nav-menu');
+
         // --- MODAL CONTROLS ---
         if(loginBtn) loginBtn.onclick = () => { loginModal.style.display = "block"; }
+        
+        // START: ADDED LISTENER FOR MOBILE LOGIN BUTTON
+        if(mobileLoginBtn) mobileLoginBtn.onclick = (e) => { 
+            e.preventDefault();
+            loginModal.style.display = "block"; 
+            
+            // Close the nav menu if it's open
+            if (navMenu && navToggle && navMenu.classList.contains('is-active')) {
+                navToggle.classList.remove('is-active');
+                navMenu.classList.remove('is-active');
+            }
+        }
+        // END: ADDED LISTENER
+
         if(closeLoginModal) closeLoginModal.onclick = () => { loginModal.style.display = "none"; }
         if(closeRegisterModal) closeRegisterModal.onclick = () => { registerModal.style.display = "none"; }
         
@@ -1093,10 +1165,6 @@ if (isset($_POST['verify_otp'])) {
 
         if(showRegisterModal) showRegisterModal.onclick = (e) => { e.preventDefault(); loginModal.style.display = "none"; registerModal.style.display = "block"; }
         if(showLoginModal) showLoginModal.onclick = (e) => { e.preventDefault(); registerModal.style.display = "none"; loginModal.style.display = "block"; }
-
-        // --- START: BURGER MENU SCRIPT ---
-        const navToggle = document.getElementById('nav-toggle');
-        const navMenu = document.getElementById('nav-menu');
 
         if (navToggle && navMenu) {
             navToggle.addEventListener('click', () => {
